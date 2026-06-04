@@ -1,7 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { RefreshCw, Search, ChevronDown, Users, Zap, CheckCircle2, Clock3, XCircle, TrendingUp } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { RefreshCw, Search, ChevronDown, Users, Zap, CheckCircle2, Clock3 } from 'lucide-react';
 import { DEPARTMENTS, DEPT_META, PatientRecord } from '../types';
-import { supabase } from '../lib/supabase';
 
 const STATUSES = ['Waiting', 'In Progress', 'Completed', 'Cancelled'] as const;
 type Status = (typeof STATUSES)[number];
@@ -13,12 +12,7 @@ const STATUS_STYLES: Record<Status, string> = {
   Cancelled:    'bg-gray-100 text-gray-500 border-gray-200',
 };
 
-const STATUS_ICONS: Record<Status, React.ReactNode> = {
-  Waiting:       <Clock3 size={11} />,
-  'In Progress': <TrendingUp size={11} />,
-  Completed:     <CheckCircle2 size={11} />,
-  Cancelled:     <XCircle size={11} />,
-};
+// icons were defined previously but are not used; removed to avoid unused-variable errors
 
 export default function AdminDashboard() {
   const [patients, setPatients] = useState<PatientRecord[]>([]);
@@ -32,12 +26,58 @@ export default function AdminDashboard() {
   const fetchPatients = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('patients')
-        .select('*')
-        .order('registered_at', { ascending: false });
-      if (!error && data) {
-        setPatients(data as PatientRecord[]);
+      const res = await fetch('http://localhost:8000/api/patients');
+      if (res.ok) {
+        const data = await res.json();
+        // log a sample of raw records to help diagnose mismatched field names
+        console.debug('fetchPatients: raw sample', Array.isArray(data) ? data.slice(0, 5) : data);
+        const normalize = (r: any): PatientRecord => {
+          const statusRaw = r.status ?? r.state ?? r.current_status ?? r.stage ?? null;
+          let status = 'Waiting';
+          if (statusRaw != null) {
+            status = String(statusRaw);
+            // common boolean/number mappings
+            if (status === '0' || status.toLowerCase() === 'false') status = 'Waiting';
+          }
+
+          const priorityRaw = r.priority ?? r.is_urgent ?? r.urgent ?? r.priority_level ?? null;
+          let priority = 'Normal';
+          if (priorityRaw != null) {
+            if (typeof priorityRaw === 'boolean') priority = priorityRaw ? 'Urgent' : 'Normal';
+            else if (typeof priorityRaw === 'number') priority = priorityRaw > 0 ? 'Urgent' : 'Normal';
+            else if (!isNaN(Number(priorityRaw))) priority = Number(priorityRaw) > 0 ? 'Urgent' : 'Normal';
+            else if (String(priorityRaw).toLowerCase().includes('urg')) priority = 'Urgent';
+            else priority = String(priorityRaw);
+          }
+
+          let dept = (r.department_ui ?? r.department ?? r.dept ?? '').toString();
+
+          return {
+            id: r.id ?? r._id ?? r.uuid ?? String(r.id ?? Math.random()),
+            token_number: (r.token_number ?? r.token ?? r.tokenNo ?? '').toString(),
+          full_name: (r.full_name ?? r.name ?? '').toString(),
+            age: Number(r.age ?? r.patient_age ?? 0) || 0,
+            gender: (r.gender ?? r.sex ?? '').toString(),
+            mobile_number: (r.mobile_number ?? r.mobile ?? '').toString(),
+            address: (r.address ?? '').toString(),
+            department: dept,
+            status,
+            priority,
+            registered_at: (r.registered_at ?? r.registeredAt ?? new Date().toISOString()).toString(),
+          };
+        };
+        let mapped = (data as any[]).map(normalize);
+        // apply any client-side priority overrides saved during registration
+        try {
+          const key = 'bolt_pending_priorities';
+          const map = JSON.parse(localStorage.getItem(key) || '{}');
+          if (map && Object.keys(map).length > 0) {
+            mapped = mapped.map((p) => ({ ...p, priority: map[p.token_number] ?? p.priority }));
+          }
+        } catch (e) {
+          // ignore
+        }
+        setPatients(mapped);
         setLastUpdated(new Date());
       }
     } finally {
@@ -48,29 +88,33 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchPatients();
 
-    // Real-time subscription
-    const channel = supabase
-      .channel('patients-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'patients' }, () => {
-        fetchPatients();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    // Frontend now bridges to the local FastAPI backend via HTTP endpoints.
+    // Keep this effect to perform the initial load only and clean up no-op.
+    return () => {};
   }, [fetchPatients]);
 
   const updateStatus = async (id: string, status: string) => {
     setUpdatingId(id);
-    const { error } = await supabase.from('patients').update({ status }).eq('id', id);
-    if (!error) {
-      setPatients((prev) => prev.map((p) => p.id === id ? { ...p, status } : p));
+    try {
+      const res = await fetch(`http://localhost:8000/api/patients/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        setPatients((prev) => prev.map((p) => p.id === id ? { ...p, status } : p));
+      }
+    } catch (_) {
+      // ignore network errors for now
     }
     setUpdatingId(null);
   };
 
   const filtered = patients.filter((p) => {
-    const matchSearch = p.full_name.toLowerCase().includes(search.toLowerCase()) ||
-                        p.token_number.toLowerCase().includes(search.toLowerCase());
+    const name = (p.full_name ?? '').toString().toLowerCase();
+    const token = (p.token_number ?? '').toString().toLowerCase();
+    const q = search.toLowerCase();
+    const matchSearch = name.includes(q) || token.includes(q);
     const matchDept = deptFilter ? p.department === deptFilter : true;
     const matchStatus = statusFilter ? p.status === statusFilter : true;
     return matchSearch && matchDept && matchStatus;

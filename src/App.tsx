@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Activity, LayoutDashboard, ClipboardList, ChevronRight } from 'lucide-react';
+import { DEPARTMENTS } from './types';
 import PatientForm from './components/PatientForm';
 import TokenConfirmation from './components/TokenConfirmation';
 import AdminDashboard from './components/AdminDashboard';
@@ -89,7 +90,7 @@ export default function App() {
 
                   <div className="space-y-1">
                     <p className="text-[10px] text-white/20 font-bold uppercase tracking-widest mb-3">Available Departments</p>
-                    {['Cardiology', 'Orthopedics', 'Neurology', 'Pediatrics', 'General Medicine'].map((d) => (
+                    {DEPARTMENTS.map((d) => (
                       <div key={d} className="flex items-center gap-2.5 py-1.5">
                         <div className="w-1 h-1 bg-white/20 rounded-full" />
                         <span className="text-white/40 text-xs font-medium">{d}</span>
@@ -144,7 +145,7 @@ export default function App() {
         {/* Footer */}
         <footer className="shrink-0 flex items-center justify-between px-7 py-2.5 border-t border-gray-50 bg-gray-50/50">
           <p className="text-[10px] text-gray-300 font-medium uppercase tracking-widest">
-            MediCheck &bull; Powered by Supabase &bull; HIPAA-Conscious Design
+            MediCheck &bull; Powered by Local FastAPI Backend &bull; HIPAA-Conscious Design
           </p>
           {/* Hidden demo toggle */}
           <button

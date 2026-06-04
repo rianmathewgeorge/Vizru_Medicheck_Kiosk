@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle2, Printer, ArrowRight, Zap, Clock } from 'lucide-react';
 import { PatientRecord, DEPT_META } from '../types';
 
@@ -26,9 +26,16 @@ export default function TokenConfirmation({ patient, onReset }: TokenConfirmatio
     return () => cancelAnimationFrame(raf);
   }, [onReset]);
 
-  const deptMeta = DEPT_META[patient.department];
+  const safeName = (patient.full_name ?? patient.name ?? '').toString();
+  const safeToken = (patient.token_number ?? patient.token ?? '').toString();
+  const safeDept = patient.department_ui ?? patient.department ?? patient.dept ?? 'Unknown';
+  const safePriority = patient.priority ?? 'Normal';
+  const safeAge = patient.age ?? '';
+  const safeGender = patient.gender ?? '';
 
-  const formattedDate = new Date(patient.registered_at).toLocaleString('en-IN', {
+  const deptMeta = DEPT_META[safeDept as keyof typeof DEPT_META] ?? undefined;
+
+  const formattedDate = new Date(patient.registered_at ?? patient.registeredAt ?? Date.now()).toLocaleString('en-IN', {
     weekday: 'short', month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
@@ -59,7 +66,7 @@ export default function TokenConfirmation({ patient, onReset }: TokenConfirmatio
 
           <div className="text-center">
             <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Registration Successful</p>
-            <p className="text-base font-semibold text-gray-700 mt-0.5">Welcome, {patient.full_name.split(' ')[0]}</p>
+            <p className="text-base font-semibold text-gray-700 mt-0.5">Welcome, {safeName.split(' ')[0] || 'Guest'}</p>
           </div>
 
           {/* Token card */}
@@ -69,15 +76,15 @@ export default function TokenConfirmation({ patient, onReset }: TokenConfirmatio
               <div>
                 <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Token Number</p>
                 <div className="text-6xl font-black text-white tracking-tight font-mono leading-none">
-                  {patient.token_number}
+                  {safeToken}
                 </div>
               </div>
               <div className="text-right">
                 <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${deptMeta?.bg} ${deptMeta?.color} ${deptMeta?.border} border`}>
                   <div className={`w-1.5 h-1.5 rounded-full ${deptMeta?.dot}`} />
-                  {patient.department}
+                  {safeDept}
                 </div>
-                {patient.priority === 'Urgent' && (
+                {safePriority === 'Urgent' && (
                   <div className="mt-2 flex items-center gap-1 justify-end text-rose-400 text-xs font-bold">
                     <Zap size={11} /> URGENT
                   </div>
@@ -87,9 +94,9 @@ export default function TokenConfirmation({ patient, onReset }: TokenConfirmatio
 
             {/* Card body */}
             <div className="bg-white px-8 py-5 grid grid-cols-3 gap-4 border border-gray-100 rounded-b-3xl">
-              {[
-                { label: 'Patient', value: patient.full_name },
-                { label: 'Age / Gender', value: `${patient.age} yrs, ${patient.gender}` },
+                {[
+                { label: 'Patient', value: safeName || '—' },
+                { label: 'Age / Gender', value: `${safeAge} yrs, ${safeGender}` },
                 { label: 'Registered At', value: formattedDate },
               ].map(({ label, value }) => (
                 <div key={label}>

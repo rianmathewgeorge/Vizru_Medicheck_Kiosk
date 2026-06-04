@@ -1,4 +1,4 @@
-import React from 'react';
+// using the new JSX transform; no default React import required
 import { Delete, CornerDownLeft } from 'lucide-react';
 
 interface TouchNumpadProps {

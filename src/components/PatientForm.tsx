@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import TouchNumpad from './TouchNumpad';
 import { DEPARTMENTS, DEPT_META, PatientFormData, PatientRecord } from '../types';
-import { supabase } from '../lib/supabase';
 
 const INACTIVITY_TIMEOUT = 30000;
 
@@ -94,22 +93,94 @@ export default function PatientForm({ onSuccess }: PatientFormProps) {
     if (!validate()) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('patients')
-        .insert({
+      const response = await fetch('http://localhost:8000/api/patients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // include both Bolt's internal keys and the bridge's expected keys
           full_name: form.full_name.trim(),
+          name: form.full_name.trim(),
           age: Number(form.age),
           gender: form.gender,
           mobile_number: form.mobile_number,
+          mobile: form.mobile_number,
           address: form.address.trim(),
-          department: form.department,
+          // send backend-compatible department; backend currently validates against 'Dermatology'
+                // send the selected department directly (no mapping)
+                department: form.department,
+                // also include the UI value for clarity
+                department_ui: form.department,
           priority: form.priority,
-        })
-        .select()
-        .single();
+          // aliases to satisfy different API shapes
+          priority_level: form.priority === 'Urgent' ? 1 : 0,
+          is_urgent: form.priority === 'Urgent',
+          urgent: form.priority === 'Urgent' ? 1 : 0,
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const raw = await response.json();
+      console.debug('PatientForm: post response', raw);
+      const normalize = (r: any) => {
+        const statusRaw = r.status ?? r.state ?? r.current_status ?? r.stage ?? null;
+        let status = 'Waiting';
+        if (statusRaw != null) {
+          const s = String(statusRaw).toLowerCase();
+          if (['completed', 'complete', 'done', 'served', 'closed'].some(k => s.includes(k))) status = 'Completed';
+          else if (['in progress', 'in_progress', 'progress', 'doing', 'active'].some(k => s.includes(k))) status = 'In Progress';
+          else if (['cancel', 'cancelled', 'canceled'].some(k => s.includes(k))) status = 'Cancelled';
+          else status = 'Waiting';
+        }
 
-      if (error) throw error;
-      onSuccess(data as PatientRecord);
+        const priorityRaw = r.priority ?? r.is_urgent ?? r.urgent ?? r.priority_level ?? null;
+        let priority = 'Normal';
+        if (priorityRaw != null) {
+          if (typeof priorityRaw === 'boolean') priority = priorityRaw ? 'Urgent' : 'Normal';
+          else if (typeof priorityRaw === 'number') priority = priorityRaw > 0 ? 'Urgent' : 'Normal';
+          else if (!isNaN(Number(priorityRaw))) priority = Number(priorityRaw) > 0 ? 'Urgent' : 'Normal';
+          else if (String(priorityRaw).toLowerCase().includes('urg')) priority = 'Urgent';
+          else priority = 'Normal';
+        }
+
+        return {
+          id: r.id ?? r._id ?? r.uuid ?? String(r.id ?? Math.random()),
+          token_number: (r.token_number ?? r.token ?? '').toString(),
+          full_name: (r.full_name ?? r.name ?? '').toString(),
+          age: Number(r.age ?? r.patient_age ?? 0) || 0,
+          gender: (r.gender ?? r.sex ?? '').toString(),
+          mobile_number: (r.mobile_number ?? r.mobile ?? '').toString(),
+          address: (r.address ?? '').toString(),
+          department: (r.department ?? r.dept ?? '').toString(),
+          status,
+          priority,
+          registered_at: (r.registered_at ?? r.registeredAt ?? new Date().toISOString()).toString(),
+        } as PatientRecord;
+      };
+      let created = normalize(raw);
+      // If the bridge returns a minimal object (no age/gender), prefer the values the user just submitted
+      try {
+        if (!created.age || created.age === 0) created.age = Number(form.age) || created.age;
+        if (!created.gender || created.gender === '') created.gender = form.gender || created.gender;
+        if (!created.full_name || created.full_name === '') created.full_name = form.full_name.trim() || created.full_name;
+        if (!created.mobile_number || created.mobile_number === '') created.mobile_number = form.mobile_number || created.mobile_number;
+      } catch (e) {
+        // ignore
+      }
+      // persist a client-side override so the dashboard can show urgent immediately
+      try {
+        // Persist a client-side override so the dashboard shows urgent immediately.
+        // Use the token returned by the backend and store the user's selected priority
+        // (fall back to created.priority if form priority is not available).
+        const key = 'bolt_pending_priorities';
+        const map = JSON.parse(localStorage.getItem(key) || '{}');
+        const tokenKey = created.token_number || (created.token as string) || '';
+        if (tokenKey) {
+          map[tokenKey] = form.priority || created.priority || 'Normal';
+          localStorage.setItem(key, JSON.stringify(map));
+        }
+      } catch (e) {
+        // ignore
+      }
+      onSuccess(created);
     } catch (err: unknown) {
       setApiError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
     } finally {
