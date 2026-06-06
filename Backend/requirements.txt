@@ -1,0 +1,7 @@
+# Healthcare Kiosk API — Python dependencies
+# Pin minor versions for reproducible deployments; patch updates are safe.
+
+fastapi==0.115.5          # ASGI web framework
+uvicorn[standard]==0.32.1 # ASGI server (includes websockets + watchfiles for --reload)
+sqlalchemy==2.0.36        # ORM + core (v2 API used throughout)
+pydantic==2.10.3          # Data validation (v2 — native Rust core)
